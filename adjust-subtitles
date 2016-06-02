@@ -1,0 +1,126 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+use Pod::Usage;
+use Getopt::Long;
+
+my $adjunits = { 
+    's' => 1000,
+    'm' => 60 * 1000,
+    'h' => 60 * 60 * 1000
+};
+
+
+=head1 NAME
+
+adjust-subtitles - adjust SRT (subtitle file) timings
+
+=head1 SYNOPSIS
+
+   adjust-subtitles [+-][time][smh]
+
+   Reads an .srt file from STDIN and outputs content to STDOUT with
+   times adjusted according to provided parameters.
+
+   There is only ONE argument to this program. But this argument is to
+   be of a specific format which denotes three things: (1) whether to
+   advance or delay the subtitles (2) by how much (3) units of
+   specified delay (whether seconds, minutes or hours).
+
+   Where, 
+
+     The prefix '+' or '-' denotes whether the subtitles must be
+     delayed or advanced.
+
+     The [time] number can be an integer or a decimal.
+
+     The suffix [smh] can be one of 's', 'm' or 'h' for seconds, minutes or
+     hours respectively.
+
+   Example:
+        cat file.srt | adjust-subtitles +12.02s
+
+        To save this:
+
+        cat file.srt | adjust-subtitles +1.5m >new.srt
+
+=cut
+
+# EXAMPLE OF A RECORD
+# 15
+# 00:02:24,843 --> 00:02:28,836
+# And you thought we'd make
+# a fortune at the war.
+#
+
+
+my ($adjust, $delay, $advance, $units);
+
+foreach my $arg (@ARGV) {
+    if ($arg =~ m/^([+-])(\d+(?:.\d+){0,1})([SsMmHh])$/) {
+	if ($1 eq '-') {
+	    $advance = 1;
+	} elsif ($1 eq '+') {
+	    $delay = 1;
+	} else {
+	    die "Unrecognized first character: $1; Must be either + or -";
+	}
+	$adjust = $2;
+	$units = lc $3;
+    } else {
+	die "Invalid argument. Must be of the format [+-][time][smh] (ex: +12.5s)";
+    }
+}
+
+
+if (!defined $adjust) {
+    pod2usage(-message => "Need to specify the adjustment time in the format [+-][time][smh] (ex: +12.5s)", -exitval => 1);
+}
+
+if (!$delay && !$advance) {
+    $delay = 1;
+}
+
+sub to_micro {
+    my ($h, $m, $s, $u) = @_;
+
+    return $h * 60 * 60 * 1000 + $m * 60 * 1000 + $s * 1000 + $u;
+}
+
+sub from_micro {
+    my $micro = shift;
+
+    my $h = int($micro / (1000 * 60 * 60));
+    $micro = $micro - $h * (1000 * 60 * 60);
+    my $m = int($micro / (1000 * 60));
+    $micro = $micro - $m * (1000 * 60);
+    my $s = int($micro / 1000);
+    $micro = $micro - $s * 1000;
+    return [ map { if ($_ < 0) { $_ = -1 * $_; } $_; } ($h, $m, $s, $micro) ];
+}
+
+my $actual_adjust = $adjust * $adjunits->{$units};
+
+while (my $l = <STDIN>) {
+    if ($l =~ m/^(\d+):(\d+):(\d+),(\d+) --> (\d+):(\d+):(\d+),(\d+)\s*$/) {
+	    my ($sh, $sm, $ss, $su, $eh, $em, $es, $eu) = ($1, $2, $3, $4, $5, $6, $7, $8);
+	    my $sts = to_micro($sh, $sm, $ss, $su);
+	    my $ets = to_micro($eh, $em, $es, $eu);
+
+	    if ($delay) {
+		$sts += $actual_adjust;
+		$ets += $actual_adjust;
+	    } else {
+		$sts -= $actual_adjust;
+		$ets -= $actual_adjust;
+	    }
+
+	    my $news = from_micro($sts);
+	    my $newe = from_micro($ets);
+	    printf("%02d:%02d:%02d,%03d --> %02d:%02d:%02d,%03d\n", @{$news}, @{$newe});
+    } else {
+	print $l;
+    }
+}
+
