@@ -97,7 +97,12 @@ sub from_micro {
     $micro = $micro - $m * (1000 * 60);
     my $s = int($micro / 1000);
     $micro = $micro - $s * 1000;
-    return [ map { if ($_ < 0) { $_ = -1 * $_; } $_; } ($h, $m, $s, $micro) ];
+    return [ 
+	map { 
+	    if ($_ < 0) { # if adjustment leads to negatives, just reset to 0
+		$_ = 0; 
+	    } 
+	    $_; } ($h, $m, $s, $micro) ];
 }
 
 my $actual_adjust = $adjust * $adjunits->{$units};
